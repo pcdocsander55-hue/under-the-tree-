@@ -1,0 +1,15 @@
+const fs = require('fs');
+const assert = require('assert');
+const path = require('path');
+const root = path.join(__dirname, '..');
+const original = fs.readFileSync(path.join(root,'baseline','index.original.0.10.1.html'),'utf8');
+const fixed = fs.readFileSync(path.join(root,'shared','index.html'),'utf8');
+const before = 'Platform.copyText(showClaimCode(c.code))';
+const after = 'Platform.copy(showClaimCode(c.code))';
+assert(original.includes(before));
+assert(!fixed.includes(before));
+assert(fixed.includes(after));
+assert(fixed.includes('copy(text){'));
+assert.strictEqual(fixed,original.replace(before,after), 'Unexpected modifications');
+assert(fixed.includes("const APP_VERSION = '0.10.1'"));
+console.log('PASS: the exact one-line Copy fix, no other source changes');
