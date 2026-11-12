@@ -1,0 +1,34 @@
+# Generated web build
+web/dist/
+
+# Python/cache/test artifacts
+__pycache__/
+*.py[cod]
+.pytest_cache/
+tests/*.log
+tests/results*.json
+
+# Local environment/editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+.env
+.env.*
+
+# Android signing material — NEVER commit
+*.jks
+*.keystore
+keystore-password.txt
+*SIGNING_KEY*.zip
+*signing*key*.zip
+
+# Firebase/admin credentials — NEVER commit
+*service-account*.json
+*service_account*.json
+firebase-adminsdk-*.json
+
+# Local build/download artifacts
+*.apk
+*.aab
+*.zip
