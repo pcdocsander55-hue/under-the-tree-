@@ -1,38 +1,76 @@
 # Under the Tree
 
-Private staging repository for the family Christmas wish-list app.
+Under the Tree is a free Christmas wish-list app I originally put together for my own family.
 
-## Repository status
+I wanted something simple: everybody can keep a wish list, people can claim gifts so we do not buy the same thing twice, and we can suggest gift ideas for someone without that person seeing them.
 
-The repository is initialized and protected against accidental commits of signing keys and common private credentials.
+It turned into a much better app than I expected, so I decided to share it. If another family finds it useful, that is really the whole point.
 
-The last source package I can independently verify from the project files is **0.10.1 shared Android/Web/PWA**. The UPC/barcode scanner was **not implemented**.
+## What it does
 
-Before this repository is treated as the authoritative source, the **current tested source package** should be checked against that 0.10.1 snapshot and committed here. I do not want to silently publish an older snapshot if the tested build changed elsewhere.
+- Create and share Christmas wish lists with your family.
+- Add **Gift Ideas** for someone without spoiling the surprise for them.
+- Reserve a gift so other family members know somebody is taking care of it.
+- Mark gifts as bought while keeping that information hidden from the person receiving them.
+- Use 48-hour holds so something is not tied up forever if somebody changes their mind.
+- Add children or other family members whose lists are managed by someone else.
+- Let a managed family member claim their own profile later without creating a duplicate.
+- Use it on Android or in a web browser.
 
-## Expected project structure
+## Try it
 
-- `shared/index.html` — shared app core
-- `web/` — Web/PWA adapter and assets
-- `baseline/` — comparison baseline and Firestore rules
-- `tools/` — build, patch, icon, and security utilities
-- `tests/` — automated Web/Android-path tests
-- `firebase.json` / `.firebaserc` — Hosting configuration
+### Android
 
-The 0.10.1 source snapshot does **not** contain the Android wrapper source (Java/build scripts). The existing Android APK was built separately.
+Download the latest APK from the GitHub Releases page:
 
-## Security
+**[Download Under the Tree for Android](https://github.com/pcdocsander55-hue/under-the-tree-/releases/latest)**
 
-Do **not** commit the Android signing keystore, signing-key ZIP, passwords, service-account credentials, or other private secrets.
+If you already have Under the Tree installed, install the new APK over the existing copy instead of uninstalling it first.
 
-The Firebase Web API key used by the Web/PWA client is public client configuration; access control is enforced by Firebase Authentication and Firestore security rules.
+### Web, iPhone and iPad
 
-## Public-release status
+You can use the web version here:
 
-Keep this repository **private** until the final source, branding, third-party licensing, and secrets review is complete.
+**[under-the-tree-1ee02.web.app](https://under-the-tree-1ee02.web.app)**
+
+On an iPhone or iPad, open it in Safari and use **Add to Home Screen** if you want it to work more like a regular app.
+
+## A few things I cared about when building it
+
+I did not want this turning into another app full of ads and tracking.
+
+There are **no ads, no behavioral tracking, and no selling your data**. The app stores the information it needs to make the family lists, gift ideas, reservations, and other features work.
+
+I also wanted the surprise part of Christmas to actually stay a surprise. Gift Ideas for you are hidden from you, even though the rest of the family can see and work with them.
+
+## Source code
+
+The source is here because I wanted the app to stay available and give other people the chance to improve it.
+
+The main pieces are:
+
+- `shared/index.html` — the shared app itself
+- `web/` — the web/PWA version
+- `android/` — the Android wrapper
+- `build-android.sh` — Android build script
+- `baseline/` — baseline files and Firestore rules
+- `tests/` — automated tests
+- `tools/` — project utilities
+
+If you fork the project for your own use, set up your own Firebase project rather than using the live Under the Tree backend.
+
+## Bugs, ideas and improvements
+
+If you find something that does not work, open an Issue.
+
+If you have an idea that would make the app better, I am open to that too. This started as a family project, and I would like to keep making it useful without turning it into something complicated just for the sake of adding features.
+
+Pull requests are welcome.
 
 ## License
 
-This project is licensed under the **GNU General Public License v3.0 (GPL-3.0-only)**. You may use, study, modify, and redistribute the code under the terms of GPLv3. Distributed modified versions must remain under GPLv3 and include the corresponding source code.
+Under the Tree is licensed under the **GNU General Public License v3.0 (GPL-3.0-only)**.
+
+You are welcome to use, modify, and share the code under the terms of the GPL. If you distribute a modified version, the GPL requires the corresponding source code to remain available under the same license.
 
 See [LICENSE](LICENSE) for the full license text.
