@@ -1,0 +1,17 @@
+{
+  "id": "./",
+  "name": "Under the Tree",
+  "short_name": "Under the Tree",
+  "description": "A private family Christmas wish list.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#1F3B2D",
+  "theme_color": "#1F3B2D",
+  "lang": "en",
+  "icons": [
+    {"src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
+    {"src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"},
+    {"src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"}
+  ]
+}

@@ -1,0 +1,149 @@
+UNDER THE TREE 0.10.1 - WEB / PWA TEST RESULTS
+Build: 0.10.1-9c051de246   Run: 2026-09-27 (container, Chromium 141.0.7390.37 headless via Playwright)
+
+SUMMARY
+  Web suite ............ 77/77 PASS
+  Android-path compare . 12/12 PASS
+  Security scan ........ RESULT: PASS (0 findings)
+
+WHAT THE TESTS RAN AGAINST (read this before trusting the PASS lines)
+  - Browser: desktop Chromium with an iPhone user-agent where noted. NOT Safari, NOT a real iPhone.
+  - Backend: tests/mock_firestore.py, an in-memory stand-in for Firebase Auth + Firestore REST.
+    It enforces only 4 rule behaviours: (1) nobody may read families/*/hidden/<their own member id>/**,
+    (2) a recipient may not write their own Gift Ideas, (3) a managed child profile moves to a new sign-in
+    only with a live, matching, unused setup code in the same commit, (4) create-only preconditions.
+    Everything else the real rules enforce was NOT exercised here.
+  - "Dad" plays the Android role but runs the web build. Real Android<->iPhone crossover is manual (REAL_IPHONE_TEST.md).
+
+NOT TESTED HERE (must be checked elsewhere)
+  - Real Firestore security rules (unchanged file; run your existing rules emulator suite).
+  - 48-hour hold expiry, take-over of an expired hold, bought-never-expires, Undo Bought (server-clock rules).
+  - Organizer protections (last-organizer, demote/remove guards): only "promote works from web" was checked.
+  - Your existing Android/Firestore regression suites: not available here (only the APK was provided).
+  - Safari storage behaviour, Add to Home Screen, safe-area inset values, iOS audio, keyboard behaviour.
+
+WEB SUITE (tests/test_web.py)
+
+  == PWA shell, manifest, service worker
+  PASS  manifest: name/short_name/display/start_url/scope
+  PASS  manifest: 192, 512 and maskable icons
+  PASS  manifest served as application/manifest+json
+  PASS  head has apple-touch-icon
+  PASS  head has apple-mobile-web-app-capable
+  PASS  head has mobile-web-app-capable
+  PASS  head has apple-mobile-web-app-title
+  PASS  head has viewport-fit=cover
+  PASS  head has rel="manifest"
+  PASS  safe-area CSS uses all four insets
+  PASS  first-tap Enter screen shown while music is on
+  PASS  Enter starts music after the tap (no error)
+  PASS  service worker registered and controlling
+  PASS  one versioned shell cache
+  PASS  shell cache holds only static app files
+  PASS  About/build flag reports web build
+
+  == Start family (Dad), join with UTT2 (Heather on "iPhone"), persistence
+  PASS  family created, UTT2 invite shown
+  PASS  install tip shown in iPhone Safari
+  PASS  install help: Share / Add to Home Screen / Add
+  PASS  install tip hides after "Got it" and stays hidden on reload
+  PASS  Heather joined the SAME family
+  PASS  install tip still hidden after reload
+  PASS  reload: same sign-in + same profile, no new sign-up
+  PASS  close + reopen app: same identity, no rejoin, no duplicate
+
+  == A. Apple wish -> Android reserve/buy, no spoiler for the recipient
+  PASS  Dad sees Heather's new wish
+  PASS  Heather's My List unchanged after Dad reserves
+  PASS  Heather's My List unchanged after Dad marks bought
+  PASS  Heather never requested her own hidden reservations
+  PASS  Heather's local storage holds no reservation of her wish
+
+  == B. Apple Gift Idea for Dad -> Dad sees nothing
+  PASS  idea saved and visible to the shopper
+  PASS  another shopper sees the idea
+  PASS  Dad sees no idea, count, reservation or bought status on any tab
+  PASS  Dad's app never REQUESTED ideas for Dad
+  PASS  Dad's snapshot + local storage contain no idea for Dad
+
+  == C. Shopping coordination (client side only)
+  PASS  Heather sees the reserved item as taken / off the family list
+  PASS  Heather cannot take an active hold (create-only write refused)
+
+  == D. Add Child (Dad) -> Emma claims on web with setup code
+  PASS  Emma has Dad + Heather as managers
+  PASS  setup code issued (20 chars); only its hash stored
+  PASS  picking Emma asks for a setup code (name alone is not enough)
+  PASS  wrong setup code refused, nothing changed
+  PASS  claim without a code refused by the (mock) server
+  PASS  the SAME Emma record was claimed
+  PASS  no duplicate Emma
+  PASS  Emma's existing wish kept
+  PASS  Emma's managers kept
+  PASS  Emma never requested ideas for Emma; none in DOM/storage
+  PASS  Dad can still add to Emma's list after the claim
+
+  == E. Organizer on web (client side only)
+  PASS  Heather (web) is now an organizer and gets manage controls
+  PASS  organizer Heather still never requests / sees ideas for Heather
+
+  == Web-specific behaviour
+  PASS  Fill from link: calm web message, form still usable
+  PASS  Platform.copyText exists (0.10.1 setup-code Copy crash fixed)
+  PASS  Settings > About says Web / PWA and the build
+  PASS  only the two released themes offered
+  PASS  theme classic applies on web
+  PASS  theme santa applies on web
+  PASS  music off: no Enter screen, straight into the app
+  PASS  reduced motion: opening scene skipped
+
+  == Layout at Apple widths (no sideways scrolling, Cancel reachable)
+  PASS  iPhone SE 1st gen 320px: no sideways scroll; Cancel on screen; buttons >=38px tall
+  PASS  iPhone SE 375px: no sideways scroll; Cancel on screen; buttons >=38px tall
+  PASS  iPhone 15/16 393px: no sideways scroll; Cancel on screen; buttons >=38px tall
+  PASS  Pro Max 440px: no sideways scroll; Cancel on screen; buttons >=38px tall
+  PASS  iPad portrait 768px: no sideways scroll; Cancel on screen; buttons >=38px tall
+
+  == Privacy of caches, CSP, errors
+  PASS  after all flows the SW cache still holds only the 10 shell files
+  PASS  no family data (names, wishes, ideas, invite) inside the SW cache
+  PASS  no CSP violations (Dad (plays the Android role))
+  PASS  no page errors (Dad (plays the Android role))
+  PASS  no CSP violations (Heather reopened)
+  PASS  no page errors (Heather reopened)
+  PASS  no CSP violations (Grandma (another shopper))
+  PASS  no page errors (Grandma (another shopper))
+  PASS  no CSP violations (Emma (iPhone))
+  PASS  no page errors (Emma (iPhone))
+
+  == Update: new build detected, never reloads over an open form, identity kept
+  PASS  "An Under the Tree update is ready." shown
+  PASS  Update refused while a wish is being edited (text kept)
+  PASS  after Update: new build running
+  PASS  after Update: same sign-in and profile
+  PASS  after Update: exactly one (new) shell cache
+
+ANDROID CODE PATH (tests/test_android_path.py) - 0.10.1 APK asset vs shared core, fake Android bridge, Chromium
+  PASS  Android path: "gate" identical to the 0.10.1 APK asset
+  PASS  Android path: "welcome" identical to the 0.10.1 APK asset
+  PASS  Android path: "music" identical to the 0.10.1 APK asset
+  PASS  Android path: "mine" identical to the 0.10.1 APK asset
+  PASS  Android path: "mine2" identical to the 0.10.1 APK asset
+  PASS  Android path: "copied" identical to the 0.10.1 APK asset
+  PASS  Android path: Settings identical except build info (none on Android)
+  PASS  Android path: no Enter screen, music starts at launch as before
+  PASS  Android path: web flag is off
+  PASS  0.10.1 APK asset: Platform.copyText missing (the setup-code Copy bug)
+  PASS  shared core: Platform.copyText works through the Android bridge
+  PASS  no page errors on either
+
+SECURITY SCAN (tools/security_scan.py)
+  SECURITY SCAN of /home/claude/utt/web/dist
+  files: 11
+  INFO index.html: Firebase Web API key AIzaSyACsS… (public client config by design; access is controlled by Firestore rules)
+  RESULT: PASS (0 findings)
+
+OTHER CHECKS
+  PASS  node --check pwa.js, service-worker.js
+  PASS  firestore-0_10_1.rules byte-identical to the uploaded file (sha256 7bd6f6c2...856f27)
+

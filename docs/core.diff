@@ -1,0 +1,79 @@
+--- baseline/index-0.10.1-from-apk.html	2026-09-27 02:27:49.346649782 +0000
++++ shared/index.html	2026-09-27 10:07:22.522981806 +0000
+@@ -467,6 +467,8 @@
+ };
+ const Platform = {
+   isNative: !!Native,
++  /* web: true only in the web/PWA build (web/pwa.js sets window.UTT_WEB before this script). Android never has it. */
++  isWeb: !Native && !!window.UTT_WEB,
+   getItem(k){ try { return Native ? Native.getItem(k) : window.localStorage.getItem(k); } catch(e){ return null; } },
+   setItem(k, v){
+     let ok = false;
+@@ -499,11 +501,18 @@
+   },
+   copy(text){
+     if(Native){ return Native.copyText(text) === true; }
++    /* web: the Clipboard API works in Safari and Chrome on https. It is asynchronous, so a later failure is reported loudly. */
++    if(navigator.clipboard && window.isSecureContext){
++      navigator.clipboard.writeText(String(text)).catch(() => { try { toast('Copy failed. Press and hold the text to select it instead.', 'err'); } catch(e){} });
++      return true;
++    }
+     try {
+-      const t = document.createElement('textarea'); t.value = text; document.body.appendChild(t); t.select();
++      const t = document.createElement('textarea'); t.value = text; t.setAttribute('readonly', ''); t.style.fontSize = '16px'; document.body.appendChild(t); t.select();
+       const ok = document.execCommand('copy'); t.remove(); return !!ok;
+     } catch(e){ return false; }
+   },
++  /* 0.10.1 called Platform.copyText for setup codes but only copy() existed, so Copy threw. Same behaviour as copy(). */
++  copyText(text){ return this.copy(text); },
+   consumeShared(){ try { return Native ? (Native.consumeSharedText() || '') : ''; } catch(e){ return ''; } }
+ };
+ function readJSON(k){ const v = Platform.getItem(k); return v ? parseJSON(v) : null; }
+@@ -1957,7 +1966,7 @@
+     (fb ? renderClaimDiag() : '') +
+     (fb ? renderMfDiag() : '') +
+     '</section>';
+-  h += '<section class="panel"><h3>About</h3><p class="hint">Under the Tree ' + APP_VERSION + (Platform.isNative ? ' for Android' : ' web version') + '.</p>' +
++  h += '<section class="panel"><h3>About</h3><p class="hint">Under the Tree ' + APP_VERSION + (Platform.isNative ? ' for Android' : (Platform.isWeb ? '<br>Web / PWA' + (window.UTT_WEB.standalone() ? ' (installed)' : ' (in the browser)') + ', build ' + esc(window.UTT_WEB.build) : ' web version')) + '.</p>' +
+     (fb ? '<p class="hint">Leaving is under Family membership above.</p>'
+         : '<button class="btn danger" data-act="leave">Delete demo data</button>') + '</section>';
+   return h;
+@@ -2215,7 +2224,7 @@
+   const url = normalizeUrl(field(f, 'url').value);
+   if(!url){ setFill('err', 'Paste a full web link first, like https://www.target.com/…'); return; }
+   field(f, 'url').value = url;
+-  if(!Platform.isNative){ setFill('warn', 'Filling from a link only works in the Android app. Type the details in below.'); return; }
++  if(!Platform.isNative){ setFill('warn', 'We couldn\u2019t fill this item automatically. You can still enter the details below.'); return; }
+   setFill('', 'Reading the page…'); if(b) b.disabled = true;
+   let r;
+   try { r = await Platform.http('GET', url, {'User-Agent': UA, 'Accept': 'text/html,application/xhtml+xml;q=0.9,*/*;q=0.8', 'Accept-Language': 'en-US,en;q=0.9'}); }
+@@ -2955,7 +2964,7 @@
+         app carries on. A broken decoration must never break the app.
+ 
+    The choice is stored PER PHONE (Platform.setItem), never in the family record, so Dad can run Santa
+-   Chases Rudolph while Heather runs Classic Christmas and neither ever sees the other's theme.
++   Chases Rudolph while another person runs Classic Christmas and neither ever sees the other's theme.
+ 
+    0.9.1: only RELEASED themes are offered. Cozy Christmas House, Snowman and Sledding stay in the
+    registry (and their scene code stays in the engine) so they can come back once redesigned, but they
+@@ -3465,6 +3474,11 @@
+   } else { render(); handleShare(); }
+   applyTheme();
+   festive('snow');
++  if(Platform.isWeb && typeof window.UTT_WEB.gate === 'function'){
++    ambStart();
++    window.UTT_WEB.gate(musicEnabled(), function(){ intro(); if(startMusic(false) && MUSIC.ctx && MUSIC.ctx.state === 'suspended'){ try { MUSIC.ctx.resume(); } catch(e){} } });
++    return;
++  }
+   intro();
+   ambStart();
+   startMusic(false);
+@@ -3476,7 +3490,7 @@
+   orgClaimChecks, fp, RULES_PROBE, claimFailMessage,
+   ambTick, ambPlay, ambStart, ambStop, ambBlocked, ambWindow, ambWanted, CHASE_LINES, SNOW_FLAKES,
+   festive, paintDeco, reducedMotion,
+-  isOrganizerMember, isRemoved, meIsOrganizer, organizerCount, canManageFamily, connChip };
++  isOrganizerMember, isRemoved, meIsOrganizer, organizerCount, canManageFamily, connChip, sheetOpen };
+ boot();
+ })();
+ </script>

@@ -1,0 +1,26 @@
+{
+  "hosting": {
+    "public": "web/dist",
+    "ignore": ["**/.*", "**/SHA256SUMS.txt"],
+    "cleanUrls": false,
+    "trailingSlash": false,
+    "rewrites": [{"source": "**", "destination": "/index.html"}],
+    "headers": [
+      {"source": "**", "headers": [
+        {"key": "X-Content-Type-Options", "value": "nosniff"},
+        {"key": "Referrer-Policy", "value": "no-referrer"},
+        {"key": "X-Frame-Options", "value": "DENY"},
+        {"key": "Permissions-Policy", "value": "camera=(), microphone=(), geolocation=(), payment=(), usb=()"},
+        {"key": "Content-Security-Policy", "value": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data: blob:; connect-src 'self' https://firestore.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com; font-src 'self' data:; media-src 'self' blob: data:; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"}
+      ]},
+      {"source": "/", "headers": [{"key": "Cache-Control", "value": "no-cache"}]},
+      {"source": "/index.html", "headers": [{"key": "Cache-Control", "value": "no-cache"}]},
+      {"source": "/service-worker.js", "headers": [{"key": "Cache-Control", "value": "no-cache, no-store, must-revalidate"}]},
+      {"source": "/manifest.webmanifest", "headers": [
+        {"key": "Content-Type", "value": "application/manifest+json"},
+        {"key": "Cache-Control", "value": "no-cache"}]},
+      {"source": "/@(pwa.js|pwa.css)", "headers": [{"key": "Cache-Control", "value": "no-cache"}]},
+      {"source": "/icons/**", "headers": [{"key": "Cache-Control", "value": "public, max-age=86400"}]}
+    ]
+  }
+}

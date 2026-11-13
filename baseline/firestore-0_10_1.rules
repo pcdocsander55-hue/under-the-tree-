@@ -1,0 +1,644 @@
+rules_version = '2';
+
+// Under the Tree 0.10.0 - Firestore rules for the ONE shared backend (project under-the-tree-1ee02).
+// RULES MARKER: utt-rules-0.10.1  (the app checks for these rules through /uttRulesProbe below)
+// Every family uses this project. Families never set up Firebase themselves.
+//
+// 0.10.1 (PUBLISH THESE RULES FIRST, then install the 0.10.1 app):
+//   Built on the EXACT 0.10.0 file. One behaviour changes on purpose:
+//   - A CHILD's profile (a member someone manages: non-empty managerIds, or on a 0.9.x record a non-empty
+//     'managers' list) can no longer be taken over by anyone who simply joins the family. Linking a child
+//     to a sign-in now needs a ONE-TIME SETUP CODE issued by an organiser or by one of the child's active list
+//     managers. The code is stored only as a SHA-256 hash in families/{f}/memberClaims/{child}, a document
+//     nobody can read or list. Issuing a new code replaces the old one; it expires (at most 60 minutes);
+//     it is consumed in the same batch that links the child; a wrong/expired/used/replaced code fails and
+//     the batch changes nothing. Adults (no managers) are unchanged: see KNOWN LIMITATIONS.
+//   - 0.10.0 phones: everything keeps working EXCEPT picking an existing child's profile on a new phone,
+//     which is refused (needs 0.10.1 and a setup code). Proven on the emulator.
+//   - ADDS the read-only probe id 'child-claim-1'.
+//
+// 0.10.0 (PUBLISH THESE RULES FIRST, then install the 0.10.0 app. 0.8.0 - 0.9.2 phones keep working unchanged):
+//   Built on the EXACT 0.9.2 file. Nothing below the 0.9.2 line was loosened; the 0.9.2 1000-expression
+//   ordering (cheap shape checks first, identity checks last) is kept in every new branch too.
+//   - NEW secret Gift Ideas: families/{f}/hidden/{r}/giftIdeas/{i}. Ideas OTHER people suggest for person r.
+//     Readable and writable only by a linked, active family member who is NOT r and whose sign-in is not
+//     linked to r - the same test as the 0.8.0 reservation spoiler protection. Organiser status is never
+//     consulted for reading, so an organiser can never read ideas for themselves. There is NO parent or
+//     summary document: /hidden/{r} itself does not exist and nothing anywhere counts ideas.
+//   - NEW idea reservations: families/{f}/hidden/{r}/ideaReservations/{i}. Same document shape, same
+//     server-clock hold, same take-over-after-expiry and same bought-never-expires rules as wish
+//     reservations. An idea that is reserved or bought can be neither edited nor deleted (release first).
+//   - NEW managed members: members/{m}.managerIds = the MEMBER ids (not sign-ins) that may keep m's Wish
+//     List. A manager must be a linked, ACTIVE member, so a removed manager loses the right at once and a
+//     removed person who rejoins as someone new does not get it back. Managers change one at a time:
+//     an organiser may add or remove any; an existing manager may add another active member or remove
+//     themselves. Nobody can add themselves to a list they do not already keep. Members written by 0.9.x
+//     (no managerIds field) keep the 0.9.x meaning of 'managers' (sign-in ids) until managerIds is set.
+//   - A list manager is NOT an organiser: managerIds is consulted only by keepsList() (wishes).
+//   - ADDS the read-only probe id 'gift-ideas-1'.
+//
+// (0.9.2 notes follow.)
+//   - FIXES the live refusal of Remove from family group, Disconnect from app and Restore to family. Google's
+//     engine evaluates at most 1000 expressions per request; the 0.9.1 members update rule evaluated the
+//     caller's identity in every branch before looking at what the write changed, and ran out of budget
+//     before reaching removeMember/disconnect/restoreMember. Each branch now checks the shape of the write
+//     first. Same conditions, new order (tests/rulesfile.test.mjs proves it function by function).
+//   - CLOSES a hole found by the real emulator: an organiser could write organizerCount 0 on its own while
+//     keeping the role, reopening the bootstrap claim. The count may now reach 0 only when the caller is no
+//     longer an organiser after the batch (the last organiser leaving the group). The app never made that write.
+//   - ADDS the read-only probe id 'organizer-admin-2', so a 0.9.2 phone can report whether this fix is live.
+//   - 0.8.0, 0.9.0 and 0.9.1 phones keep working unchanged, and their Manage Family actions start working.
+//
+// (0.9.1 notes follow.) PUBLISH ORDER: publish these rules FIRST, then update phones to 0.9.1.
+//   - 0.8.0 and 0.9.0 phones keep working unchanged under these rules (every path they use is preserved).
+//   - 0.9.1 changes NO permission. It only (a) renames helper functions so no name is declared in two
+//     scopes, and (b) adds the read-only /uttRulesProbe path at the bottom, which the 0.9.1 app reads
+//     to confirm these rules are live before it offers "Become the family organiser".
+//   - A 0.9.1 phone opened while OLDER rules are live does everything 0.9.0 could, and says plainly that
+//     the server's rules need updating instead of offering a claim the server would refuse.
+//   See docs/UPGRADE_0.9.1.md.
+//
+// Layout (0.9.0 additions marked NEW):
+//   families/{f}                      name, createdAt, createdBy; holdHours, holdSetBy
+//                                     NEW organizerCount: how many ACTIVE organizers this family has.
+//                                         Absent or 0 = nobody is organizer yet, so exactly one linked
+//                                         member may claim it (the legacy bootstrap). 1+ closes that path.
+//   families/{f}/access/{uid}         This sign-in belongs to family f. memberId = the person this phone is.
+//                                     Only that sign-in can read it. NEW: an organizer may LIST and DELETE
+//                                     access records in their own family (Disconnect / Remove a member).
+//   families/{f}/invites/{code}       The document ID is the secret join code.
+//   families/{f}/members/{m}          person: name, uid (phone link or null), managers (uids)
+//                                     NEW role:   'organizer' or absent. Absent = ordinary member.
+//                                     NEW status: 'active' | 'removed'. Absent = active.
+//                                     NEW removedAt (int), removedBy (memberId string).
+//   families/{f}/wishes/{w}           a wish on someone's list
+//   families/{f}/hidden/{o}/reservations/{w}  who reserved/bought wish w on o's list
+//   families/{f}/hidden/{r}/giftIdeas/{i}         0.10.0: secret idea i for person r (r can never read it)
+//   families/{f}/hidden/{r}/ideaReservations/{i}  0.10.0: who reserved/bought idea i (same shape as above)
+//   families/{f}/members/{m}.managerIds           0.10.0: member ids allowed to keep m's Wish List
+//   families/{f}/memberClaims/{m}                 0.10.1: the live setup code for child m (hash only; unreadable)
+//
+// Security model (1-4 unchanged from 0.8.0; 5-8 are new):
+//   1. Knowing a family ID gives nothing. Every read or write inside a family needs an access record
+//      for the caller's own sign-in.
+//   2. An access record can only be created (a) with a valid invite code, (b) in the same batch that
+//      creates a brand-new family, or (c) once, by a phone that was already linked to a person in that
+//      family before 0.8.0 ("upgrade"). exists()/get() below read the state BEFORE the batch, so an
+//      invite or link written in the same batch cannot be used to let yourself in.
+//   3. Spoiler protection: reservations on a person's list can be read or written only by a sign-in whose
+//      access record names a DIFFERENT person who is linked to that same sign-in, and that is not itself
+//      linked to the list owner. A phone that hasn't picked who it is sees no reservations at all.
+//   4. There is no way to list families or access records -- EXCEPT an organizer listing their own family's
+//      access records, which is required to disconnect a member and is scoped to that one family.
+//   5. A REMOVED person is locked out at three separate gates, so no single mistake re-admits them:
+//        a. their access records are deleted, so inFamily() is false;
+//        b. their member.uid is cleared, so the 'upgrade' path cannot recreate access;
+//        c. an access record may not point at a member whose status is 'removed', and a removed member
+//           may not be re-linked to any uid, so an invite code cannot reclaim them either.
+//      Their wishes, reservations and purchase history are never touched by removal.
+//   6. Only an organizer may change another member's role or status, or delete another member's access.
+//      An ordinary member cannot promote itself: role is writable only by an existing organizer, or by
+//      the one bootstrap claim below.
+//   7. Bootstrap: when organizerCount is absent or 0, ONE linked, active member may make itself organizer,
+//      in a single batch that also sets organizerCount to 1. From then on the path is shut. It reopens only
+//      if every organizer deliberately leaves the family group (which decrements the count back to 0);
+//      that is on purpose, so a family can never be permanently locked out of administering itself.
+//   8. organizerCount moves in the same batch as every role change and may never go below 0. Demoting or
+//      removing the last organizer would take it to 0 while that member is still in the family, which the
+//      members rules refuse. That is how "the last organizer cannot demote itself" is enforced on the
+//      server rather than in the app.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+    function famPath(f) { return /databases/$(database)/documents/families/$(f); }
+    function accessPath(f) { return /databases/$(database)/documents/families/$(f)/access/$(request.auth.uid); }
+    function memberPath(f, m) { return /databases/$(database)/documents/families/$(f)/members/$(m); }
+    // 0.10.1: the one live setup code for child m (a SHA-256 hash; nobody can read it).
+    function claimPath(f, m) { return /databases/$(database)/documents/families/$(f)/memberClaims/$(m); }
+    function invitePath(f, c) { return /databases/$(database)/documents/families/$(f)/invites/$(c); }
+
+    function inFamily(f) { return signedIn() && exists(accessPath(f)); }
+    function myMemberId(f) { return get(accessPath(f)).data.memberId; }
+    function memberExists(f, m) { return exists(memberPath(f, m)); }
+    function memberData(f, m) { return get(memberPath(f, m)).data; }
+    // 0.9.0: a member with no status field is active (that is every 0.8.0 member record).
+    function statusOf(f, m) { return memberData(f, m).get('status', 'active'); }
+    function roleOf(f, m) { return memberData(f, m).get('role', ''); }
+    // The caller is person m: its access record points at m, m is linked to its sign-in, and m is active.
+    function isMe(f, m) {
+      return inFamily(f) && m is string && myMemberId(f) == m
+        && memberExists(f, m) && memberData(f, m).uid == request.auth.uid
+        && statusOf(f, m) == 'active';
+    }
+    // The caller has picked who it is, and both records agree.
+    function linked(f) { return inFamily(f) && myMemberId(f) is string && isMe(f, myMemberId(f)); }
+    // 0.9.0: the caller is an ACTIVE organizer of this family.
+    function isOrganizer(f) { return linked(f) && roleOf(f, myMemberId(f)) == 'organizer'; }
+    function orgCount(f) { return get(famPath(f)).data.get('organizerCount', 0); }
+    function orgCountAfter(f) { return getAfter(famPath(f)).data.get('organizerCount', 0); }
+    // Who may add, edit and remove wishes on m's Wish List: m's own phone, or a list manager.
+    // 0.10.0: once m has managerIds, managers are MEMBER ids and must be linked and active (so a removed
+    // manager has no rights, and a manager keeps them across a new phone). Before that (a 0.9.x record,
+    // no managerIds field) the 0.9.x meaning is kept exactly: 'managers' holds sign-in ids.
+    function keepsList(f, m) {
+      return inFamily(f) && m is string && memberExists(f, m)
+        && (memberData(f, m).uid == request.auth.uid
+            || (('managerIds' in memberData(f, m))
+                ? (linked(f) && myMemberId(f) in memberData(f, m).managerIds)
+                : request.auth.uid in memberData(f, m).managers));
+    }
+    function text(v, max) { return v is string && v.size() <= max; }
+    function codeOk(c) { return c is string && c.matches('^[a-z0-9]{20,64}$'); }
+
+    match /families/{f} {
+      function famNext() { return request.resource.data; }
+      function famMoved() { return famNext().diff(resource.data).affectedKeys(); }
+      // Unchanged from 0.8.0: anyone linked to a person in THIS family can set the hold time.
+      function holdUpdate() {
+        // 0.9.2: shape first, identity last (see the 1000-expression note in members/{m}).
+        return famMoved().hasOnly(['holdHours', 'holdSetBy'])
+          && famNext().holdHours is int
+          && famNext().holdHours >= 0 && famNext().holdHours <= 720
+          && linked(f)
+          && famNext().holdSetBy == myMemberId(f);
+      }
+      // 0.9.0: the organizer counter. It only ever moves by one, and never below zero.
+      // The matching role change is enforced in members/{m}; neither write is legal without the other.
+      function countUpdate() {
+        return famMoved().hasOnly(['organizerCount'])
+          && famNext().organizerCount is int
+          && famNext().organizerCount >= 0 && famNext().organizerCount <= 50
+          && (
+            // The one bootstrap claim: nobody is organizer, and the claimer makes ITSELF organizer.
+            (resource.data.get('organizerCount', 0) == 0
+              && famNext().organizerCount == 1
+              && linked(f)
+              && existsAfter(memberPath(f, myMemberId(f)))
+              && getAfter(memberPath(f, myMemberId(f))).data.get('role', '') == 'organizer'
+              && getAfter(memberPath(f, myMemberId(f))).data.get('status', 'active') == 'active')
+            // Afterwards only an existing organizer moves the count, one step at a time.
+            // 0.9.2: and it may reach 0 only when the caller is no longer an organizer once the batch
+            // is applied (Leave family group by the last organizer). 0.9.1 let an organizer write
+            // organizerCount 0 on its own while still holding the role, reopening the bootstrap claim
+            // for everyone else. Found by the real emulator; the app never makes that write.
+            || ((famNext().organizerCount == resource.data.get('organizerCount', 0) + 1
+                  || famNext().organizerCount == resource.data.get('organizerCount', 0) - 1)
+              && isOrganizer(f)
+              && (famNext().organizerCount >= 1
+                  || getAfter(memberPath(f, myMemberId(f))).data.get('role', '') != 'organizer'))
+          );
+      }
+      allow get: if inFamily(f);
+      allow list, delete: if false;
+      allow create: if signedIn()
+        && f.matches('^[a-z0-9]{16,40}$')
+        && famNext().keys().hasAll(['name', 'createdAt', 'createdBy'])
+        && famNext().keys().hasOnly(['name', 'createdAt', 'createdBy', 'organizerCount'])
+        && text(famNext().name, 80) && famNext().name.size() > 0
+        && famNext().createdAt is int
+        && famNext().createdBy == request.auth.uid
+        // 0.9.0 creates the family with exactly one organizer (its creator). 0.8.0 omits the field.
+        && (!('organizerCount' in famNext()) || famNext().organizerCount == 1);
+      allow update: if holdUpdate() || countUpdate();
+
+      match /access/{u} {
+        function mine() { return signedIn() && request.auth.uid == u; }
+        function accNext() { return request.resource.data; }
+        // The person this record will name is linked to this sign-in once the whole batch is applied,
+        // and is not a removed member (0.9.0).
+        function pointsAtMe(mid) {
+          return mid == null
+            || (mid is string && existsAfter(memberPath(f, mid))
+                && getAfter(memberPath(f, mid)).data.uid == u
+                && getAfter(memberPath(f, mid)).data.get('status', 'active') == 'active');
+        }
+        // exists(), not existsAfter(): an invite written in this same batch does not count.
+        function validInvite(c) { return codeOk(c) && exists(invitePath(f, c)); }
+        // One-time move from 0.7.x: this sign-in was already linked to that person BEFORE this write.
+        // 0.9.0: a removed person can never be picked up this way.
+        function upgrading(mid) {
+          return mid is string && memberExists(f, mid) && memberData(f, mid).uid == u
+            && statusOf(f, mid) == 'active';
+        }
+        function creatingFamily() {
+          return !exists(famPath(f)) && existsAfter(famPath(f)) && getAfter(famPath(f)).data.createdBy == u;
+        }
+        allow get: if mine();
+        // 0.9.0: an organizer lists its OWN family's access records to disconnect a member. There is
+        // still no way to list the access records of a family you are not an organizer of.
+        allow list: if isOrganizer(f);
+        allow create: if mine()
+          && accNext().keys().hasAll(['memberId', 'joinedAt', 'via'])
+          && accNext().keys().hasOnly(['memberId', 'joinedAt', 'via', 'invite'])
+          && accNext().joinedAt == request.time
+          && pointsAtMe(accNext().memberId)
+          && ((accNext().via == 'invite' && validInvite(accNext().get('invite', null)))
+              || (accNext().via == 'upgrade' && upgrading(accNext().memberId))
+              || (accNext().via == 'created' && accNext().memberId is string && creatingFamily()));
+        // Switch which person this phone is (or clear it). The new person must be linked to this sign-in.
+        allow update: if mine()
+          && accNext().diff(resource.data).affectedKeys().hasOnly(['memberId', 'updatedAt'])
+          && pointsAtMe(accNext().memberId);
+        // Leaving removes this sign-in's own access. 0.9.0: an organizer may also remove another
+        // sign-in's access in its own family (Disconnect from app / Remove from family group).
+        allow delete: if mine() || isOrganizer(f);
+      }
+
+      match /invites/{code} {
+        allow get, list: if inFamily(f);
+        allow create: if signedIn() && codeOk(code)
+          && request.resource.data.keys().hasOnly(['createdAt', 'createdBy'])
+          && request.resource.data.createdAt is int
+          && request.resource.data.createdBy == request.auth.uid
+          && (linked(f)
+              || (!exists(famPath(f)) && existsAfter(famPath(f))
+                  && getAfter(famPath(f)).data.createdBy == request.auth.uid));
+        // Replacing the invite code: anyone linked in the family. People already in stay in.
+        allow delete: if linked(f);
+        allow update: if false;
+      }
+
+      match /members/{m} {
+        function memNext() { return request.resource.data; }
+        function memPrev() { return resource.data; }
+        function memMoved() { return memNext().diff(memPrev()).affectedKeys(); }
+        function wasActive() { return memPrev().get('status', 'active') == 'active'; }
+        function wasOrganizer() { return memPrev().get('role', '') == 'organizer'; }
+        function nowOrganizer() { return memNext().get('role', '') == 'organizer'; }
+        function nowActive() { return memNext().get('status', 'active') == 'active'; }
+        // Access as it will be after this batch (covers the batch that creates or joins the family).
+        function inFamilyAfter() { return signedIn() && existsAfter(accessPath(f)); }
+        function accessAfterNamesM() { return inFamilyAfter() && getAfter(accessPath(f)).data.memberId == m; }
+        // The admin fields, and only those. name and managers never move with them.
+        function adminShapeKept() {
+          return memMoved().hasOnly(['role', 'status', 'uid', 'removedAt', 'removedBy'])
+            && memNext().name == memPrev().name && memNext().managers == memPrev().managers;
+        }
+
+        // 0.9.2: EVERY branch below tests the cheap shape of the write FIRST (which fields moved, and to
+        //     what) and only then the caller's identity (linked / isOrganizer, which read documents and
+        //     expand into many expressions). Google's engine stops a request after 1000 evaluated
+        //     expressions; in 0.9.1 every branch evaluated the identity checks first, so by the time the
+        //     sixth branch (removeMember) was reached the budget was spent and Remove / Restore /
+        //     Disconnect were refused with "maximum of 1000 expressions". The conditions in each branch
+        //     are the same as 0.9.1's; only their order changed (&& short-circuits, so a branch whose
+        //     shape does not match now costs a handful of expressions instead of hundreds).
+        // --- 0.8.0 behaviour, preserved: link a person to this phone, or unlink your own link. ---
+        // 0.9.0 adds two guards: a removed person can never be linked, and an organizer cannot quietly
+        // unlink itself (that would leave the family holding a role nobody can act as); it uses
+        // Leave family group instead, which demotes in the same batch -- selfLeaveGroup() below.
+        // 0.10.1: linking a CHILD (someone with list managers) also needs a live setup code, consumed in this
+        // same batch: memberClaims/{m} exists before, is marked used by THIS sign-in after, has not expired,
+        // was not used before, and the code written with it hashes to the stored hash.
+        function childProtected() {
+          return memPrev().get('managerIds', []).size() > 0 || memPrev().get('managers', []).size() > 0;
+        }
+        function claimCodeOk() {
+          return exists(claimPath(f, m)) && existsAfter(claimPath(f, m))
+            && !('usedBy' in get(claimPath(f, m)).data)
+            && getAfter(claimPath(f, m)).data.get('usedBy', '') == request.auth.uid
+            && request.time < get(claimPath(f, m)).data.expiresAt
+            && hashing.sha256(getAfter(claimPath(f, m)).data.usedToken).toHexString().lower() == get(claimPath(f, m)).data.tokenHash;
+        }
+        function linkUpdate() {
+          return memMoved().hasOnly(['uid'])
+            && wasActive()
+            && inFamilyAfter()
+            && ((memNext().uid == request.auth.uid && accessAfterNamesM() && (!childProtected() || claimCodeOk()))
+                || (memPrev().uid == request.auth.uid && memNext().uid == null && !wasOrganizer()));
+        }
+        // --- 0.9.0: the one bootstrap claim. A linked, active member makes ITSELF organizer, in the
+        //     same batch that moves the family's organizerCount from 0 to 1. ---
+        function bootstrapClaim() {
+          return memMoved().hasOnly(['role'])
+            && wasActive() && !wasOrganizer() && nowOrganizer()
+            && orgCount(f) == 0 && orgCountAfter(f) == 1
+            && linked(f) && myMemberId(f) == m;
+        }
+        // --- 0.9.0: an organizer promotes another ACTIVE, CONNECTED member. Never a removed member,
+        //     never a member with no phone linked. ---
+        function promote() {
+          return memMoved().hasOnly(['role'])
+            && wasActive() && !wasOrganizer() && nowOrganizer()
+            && memPrev().uid != null
+            && orgCountAfter(f) == orgCount(f) + 1
+            && isOrganizer(f) && myMemberId(f) != m;
+        }
+        // --- 0.9.0: demote an organizer (self or other). The count must fall by one and stay >= 1, so
+        //     the last organizer cannot demote itself or anyone else down to zero. ---
+        function demote() {
+          return memMoved().hasOnly(['role'])
+            && wasOrganizer() && !nowOrganizer() && nowActive()
+            && orgCountAfter(f) == orgCount(f) - 1
+            && orgCountAfter(f) >= 1
+            && isOrganizer(f);
+        }
+        // --- 0.9.0: Disconnect from app. Clears the phone link only; everything else is untouched.
+        //     Disconnecting ANOTHER organizer is refused, because that organizer would keep a role
+        //     nobody can act as. Demote first. ---
+        function disconnect() {
+          return memMoved().hasOnly(['uid'])
+            && memNext().uid == null && memPrev().uid != null
+            && wasActive()
+            && isOrganizer(f)
+            && (!wasOrganizer() || myMemberId(f) == m);
+        }
+        // --- 0.9.0: Remove from family group. Recoverable archive: the person is marked removed and
+        //     unlinked. Name, wishes, reservations and purchases are all left exactly as they are. ---
+        function removeMember() {
+          return memNext().get('status', 'active') == 'removed'
+            && wasActive() && !nowActive()
+            && adminShapeKept()
+            && memNext().uid == null
+            && memNext().get('role', '') == ''
+            && memNext().removedAt is int
+            // Removing an organizer costs the family one organizer, and never the last one.
+            && (wasOrganizer()
+                ? (orgCountAfter(f) == orgCount(f) - 1 && orgCountAfter(f) >= 1)
+                : orgCountAfter(f) == orgCount(f))
+            && isOrganizer(f) && myMemberId(f) != m
+            && memNext().removedBy == myMemberId(f);
+        }
+        // --- 0.9.0: Restore to family. Comes back ordinary and unconnected; they rejoin with an invite. ---
+        function restoreMember() {
+          return !wasActive() && nowActive()
+            && memNext().status == 'active'
+            && adminShapeKept()
+            && memNext().uid == null
+            && memNext().get('role', '') == ''
+            && isOrganizer(f) && myMemberId(f) != m;
+        }
+        // --- 0.9.0: Leave family group, by the person themselves. Unlinks, and demotes in the same
+        //     batch if they were an organizer, so the family is never left holding a role nobody has.
+        //     If they were the last organizer the count falls to 0 and the bootstrap path reopens. ---
+        function selfLeaveGroup() {
+          return memMoved().hasOnly(['uid', 'role'])
+            && wasActive() && nowActive()
+            && memPrev().uid == request.auth.uid && memNext().uid == null
+            && !nowOrganizer()
+            && wasOrganizer()
+            && orgCountAfter(f) == orgCount(f) - 1
+            && orgCountAfter(f) >= 0
+            && linked(f) && myMemberId(f) == m;
+        }
+
+        // --- 0.10.0: list managers. ONE member id is added or removed per write, and nothing else moves.
+        //     Add: by an organiser, or by someone who already keeps this list (a current manager, or on a
+        //     0.9.x record that has no managerIds yet, a sign-in in the old 'managers' list). The new
+        //     manager must be an ACTIVE member of this family and cannot be the person themselves.
+        //     Remove: by an organiser, or a manager removing themselves.
+        //     Shape first, identity last (the 0.9.2 1000-expression rule). ---
+        function mgrBefore() { return memPrev().get('managerIds', []); }
+        function mgrAfter() { return memNext().managerIds; }
+        function mgrAdded() { return mgrAfter().removeAll(mgrBefore()); }
+        function mgrDropped() { return mgrBefore().removeAll(mgrAfter()); }
+        function mgrActive(x) {
+          return x is string && x != m && memberExists(f, x) && statusOf(f, x) == 'active';
+        }
+        function managerChange() {
+          return memMoved().hasOnly(['managerIds'])
+            && mgrAfter() is list
+            && mgrAfter().size() <= 12
+            && mgrAfter().toSet().size() == mgrAfter().size()
+            && wasActive()
+            && ((mgrAfter().size() == mgrBefore().size() + 1
+                  && mgrAfter().hasAll(mgrBefore())
+                  && mgrAdded().size() == 1
+                  && mgrActive(mgrAdded()[0])
+                  && linked(f)
+                  && (roleOf(f, myMemberId(f)) == 'organizer'
+                      || myMemberId(f) in mgrBefore()
+                      || (!('managerIds' in memPrev()) && request.auth.uid in memPrev().get('managers', []))))
+                || (mgrAfter().size() == mgrBefore().size() - 1
+                  && mgrBefore().hasAll(mgrAfter())
+                  && mgrDropped().size() == 1
+                  && linked(f)
+                  && (roleOf(f, myMemberId(f)) == 'organizer' || mgrDropped()[0] == myMemberId(f))));
+        }
+
+        allow read: if inFamily(f);
+        allow create: if inFamilyAfter()
+          && m.matches('^[a-z0-9]{8,40}$')
+          && memNext().keys().hasAll(['name', 'uid', 'managers', 'createdAt'])
+          && memNext().keys().hasOnly(['name', 'uid', 'managers', 'createdAt', 'role', 'status', 'managerIds'])
+          && text(memNext().name, 60) && memNext().name.size() > 0
+          && memNext().createdAt is int
+          && memNext().managers is list
+          // A person may only be created active, and only the creator of a brand-new family may be
+          // created as organizer (in the same batch that sets the family's organizerCount to 1).
+          && memNext().get('status', 'active') == 'active'
+          && (memNext().get('role', '') == ''
+              || (memNext().get('role', '') == 'organizer' && accessAfterNamesM()
+                  && !exists(famPath(f)) && existsAfter(famPath(f))
+                  && getAfter(famPath(f)).data.get('organizerCount', 0) == 1
+                  && getAfter(famPath(f)).data.createdBy == request.auth.uid))
+          && ((memNext().uid == request.auth.uid && memNext().managers.size() == 0 && accessAfterNamesM()
+                && (!('managerIds' in memNext()) || memNext().managerIds == []))
+              || (memNext().uid == null && inFamily(f)
+                  && (memNext().managers.size() == 0 || memNext().managers == [request.auth.uid])
+                  // 0.10.0: a managed member starts with no manager or with exactly its creator (by member
+                  // id). More managers are added afterwards, one at a time, through managerChange().
+                  && (!('managerIds' in memNext()) || memNext().managerIds == []
+                      || (memNext().managerIds == [myMemberId(f)] && linked(f)))));
+        allow update: if linkUpdate() || bootstrapClaim() || promote() || demote()
+                       || disconnect() || removeMember() || restoreMember() || selfLeaveGroup()
+                       || managerChange();
+        allow delete: if false;
+      }
+
+      match /wishes/{w} {
+        function validWish() {
+          let d = request.resource.data;
+          return d.keys().hasOnly(['ownerId', 'title', 'url', 'price', 'store', 'imageUrl', 'exactItem', 'note', 'createdAt', 'updatedAt', 'createdBy'])
+            && text(d.title, 300) && d.title.size() > 0
+            && text(d.url, 2000) && text(d.price, 40) && text(d.store, 80)
+            && text(d.imageUrl, 2000) && d.exactItem is bool && text(d.note, 500)
+            && d.createdAt is int && d.updatedAt is int && text(d.createdBy, 128);
+        }
+        allow read: if inFamily(f);
+        allow create: if keepsList(f, request.resource.data.ownerId) && validWish();
+        allow update: if keepsList(f, resource.data.ownerId)
+          && request.resource.data.ownerId == resource.data.ownerId && validWish();
+        allow delete: if keepsList(f, resource.data.ownerId);
+      }
+
+      match /hidden/{ownerId}/reservations/{w} {
+        // Spoiler protection lives here, not in the app.
+        function shopper() {
+          return linked(f) && myMemberId(f) != ownerId
+            && memberExists(f, ownerId) && memberData(f, ownerId).uid != request.auth.uid;
+        }
+        function wishPath() { return /databases/$(database)/documents/families/$(f)/wishes/$(w); }
+        // Hours an unbought reservation keeps a gift off the list. Never changed = 48. 0 = never runs out.
+        function holdHours() { return get(famPath(f)).data.get('holdHours', 48); }
+        // Only a hold stamped with the server time it started (heldAt) can run out. Bought never runs out.
+        function ranOut(d) {
+          return d.status == 'reserved' && ('heldAt' in d) && d.heldAt is timestamp && holdHours() > 0
+            && request.time > d.heldAt + duration.value(holdHours(), 'h');
+        }
+        // 0.8.0: every new reservation must carry the server's clock (older clients could omit it and
+        // create holds that never run out).
+        function validNew(d) {
+          return d.keys().hasOnly(['wishId', 'ownerId', 'byMemberId', 'status', 'wishTitle', 'updatedAt', 'heldAt'])
+            && d.wishId == w && d.ownerId == ownerId && d.status == 'reserved'
+            && text(d.wishTitle, 300) && d.updatedAt is int
+            && d.byMemberId == myMemberId(f)
+            && ('heldAt' in d) && d.heldAt == request.time
+            && exists(wishPath()) && get(wishPath()).data.ownerId == ownerId;
+        }
+        // The person who reserved it: mark bought, undo bought, or restart their own hold.
+        function reserverUpdate() {
+          let n = request.resource.data;
+          let changed = n.diff(resource.data).affectedKeys();
+          return resource.data.byMemberId == myMemberId(f)
+            && changed.hasOnly(['status', 'updatedAt', 'heldAt'])
+            && n.status in ['reserved', 'purchased']
+            && (!changed.hasAny(['heldAt'])
+                || (('heldAt' in n) && n.heldAt == request.time)
+                || (!('heldAt' in n) && n.status == 'purchased'));
+        }
+        allow read: if shopper();
+        allow create: if shopper() && validNew(request.resource.data);
+        // Anyone else may take over a hold only after it ran out, as a fresh stamped reservation.
+        allow update: if shopper()
+          && (reserverUpdate() || (ranOut(resource.data) && validNew(request.resource.data)));
+        allow delete: if shopper() && resource.data.byMemberId == myMemberId(f);
+      }
+
+      // ================= 0.10.1: one-time setup codes for a child's own phone =================
+      // Keyed by the CHILD's member id, so there is at most one live code per child and issuing a new one
+      // replaces the old. Holds only the SHA-256 of the code. Nobody reads or lists these documents: the
+      // child's phone proves the code by writing it (usedToken) in the batch that links the child, and the
+      // members rule above hashes it. Issuers: an organiser, or an ACTIVE, LINKED list manager of the child
+      // (never the child, never a removed member). Being able to issue a code gives no other power.
+      match /memberClaims/{m} {
+        function clNext() { return request.resource.data; }
+        function clIssuer() {
+          return linked(f) && myMemberId(f) != m
+            && memberExists(f, m) && statusOf(f, m) == 'active'
+            && (memberData(f, m).get('managerIds', []).size() > 0 || memberData(f, m).get('managers', []).size() > 0)
+            && (roleOf(f, myMemberId(f)) == 'organizer'
+                || myMemberId(f) in memberData(f, m).get('managerIds', [])
+                || (!('managerIds' in memberData(f, m)) && request.auth.uid in memberData(f, m).managers));
+        }
+        function clFresh() {
+          return clNext().keys().hasAll(['tokenHash', 'createdBy', 'createdAt', 'expiresAt'])
+            && clNext().keys().hasOnly(['tokenHash', 'createdBy', 'createdAt', 'expiresAt'])
+            && clNext().tokenHash is string && clNext().tokenHash.matches('^[0-9a-f]{64}$')
+            && clNext().createdAt == request.time
+            && clNext().expiresAt is timestamp
+            && clNext().expiresAt > request.time
+            && clNext().expiresAt <= request.time + duration.value(60, 'm');
+        }
+        // Consuming: only the three 'used' fields appear, only once, by the sign-in that links the child in
+        // this same batch. (The members rule checks the code itself; a wrong code fails the whole batch.)
+        function clConsume() {
+          return clNext().diff(resource.data).affectedKeys().hasOnly(['usedBy', 'usedAt', 'usedToken'])
+            && !('usedBy' in resource.data)
+            && clNext().usedBy == request.auth.uid
+            && clNext().usedAt == request.time
+            && clNext().usedToken is string && clNext().usedToken.size() <= 64
+            && existsAfter(memberPath(f, m)) && getAfter(memberPath(f, m)).data.uid == request.auth.uid;
+        }
+        allow read: if false;
+        allow create: if clFresh() && clIssuer() && clNext().createdBy == myMemberId(f);
+        allow update: if (clFresh() && clIssuer() && clNext().createdBy == myMemberId(f)) || clConsume();
+        allow delete: if clIssuer();
+      }
+
+      // ================= 0.10.0: secret Gift Ideas =================
+      // Ideas other family members suggest for person r. THE RECIPIENT MUST NEVER READ THEM, and that is
+      // enforced here: ideaReader() is false for a sign-in whose access record names r, and for a sign-in
+      // r is linked to (so switching this phone to another person does not open r's ideas either).
+      // Organiser status is deliberately NOT an alternative to ideaReader() anywhere below.
+      match /hidden/{r}/giftIdeas/{i} {
+        function ideaReader() {
+          return linked(f) && myMemberId(f) != r
+            && memberExists(f, r) && memberData(f, r).uid != request.auth.uid;
+        }
+        function ideaHoldPath() { return /databases/$(database)/documents/families/$(f)/hidden/$(r)/ideaReservations/$(i); }
+        function ideaShape(d) {
+          return d.keys().hasAll(['recipientId', 'title', 'url', 'price', 'store', 'imageUrl', 'exactItem', 'note', 'suggestedBy', 'createdAt', 'updatedAt'])
+            && d.keys().hasOnly(['recipientId', 'title', 'url', 'price', 'store', 'imageUrl', 'exactItem', 'note', 'suggestedBy', 'createdAt', 'updatedAt'])
+            && d.recipientId == r
+            && text(d.title, 300) && d.title.size() > 0
+            && text(d.url, 2000) && text(d.price, 40) && text(d.store, 80)
+            && text(d.imageUrl, 2000) && d.exactItem is bool && text(d.note, 500)
+            && d.suggestedBy is string && d.createdAt is int && d.updatedAt is int;
+        }
+        allow read: if ideaReader();
+        // Any active family member except the recipient, for an ACTIVE recipient, signed as themselves.
+        allow create: if i.matches('^[a-z0-9]{12,40}$')
+          && ideaShape(request.resource.data)
+          && ideaReader()
+          && request.resource.data.suggestedBy == myMemberId(f)
+          && statusOf(f, r) == 'active';
+        // Only the person who suggested it, and only while nobody has reserved or bought it.
+        allow update: if ideaShape(request.resource.data)
+          && request.resource.data.suggestedBy == resource.data.suggestedBy
+          && request.resource.data.createdAt == resource.data.createdAt
+          && ideaReader()
+          && resource.data.suggestedBy == myMemberId(f)
+          && !exists(ideaHoldPath());
+        // The suggester, or an organiser moderating ideas for SOMEONE ELSE (ideaReader() still applies, so
+        // never their own), and only while nobody has reserved or bought it: purchase history is never lost.
+        allow delete: if ideaReader()
+          && (resource.data.suggestedBy == myMemberId(f) || roleOf(f, myMemberId(f)) == 'organizer')
+          && !exists(ideaHoldPath());
+      }
+
+      // Reservations on Gift Ideas. The same document shape as wish reservations (wishId holds the idea's
+      // id), the same server-clock hold, the same takeover after the hold runs out, bought never runs out.
+      match /hidden/{r}/ideaReservations/{i} {
+        function ideaShopper() {
+          return linked(f) && myMemberId(f) != r
+            && memberExists(f, r) && memberData(f, r).uid != request.auth.uid;
+        }
+        function ideaDocPath() { return /databases/$(database)/documents/families/$(f)/hidden/$(r)/giftIdeas/$(i); }
+        function ideaHoldHours() { return get(famPath(f)).data.get('holdHours', 48); }
+        function ideaRanOut(d) {
+          return d.status == 'reserved' && ('heldAt' in d) && d.heldAt is timestamp && ideaHoldHours() > 0
+            && request.time > d.heldAt + duration.value(ideaHoldHours(), 'h');
+        }
+        function ideaValidNew(d) {
+          return d.keys().hasOnly(['wishId', 'ownerId', 'byMemberId', 'status', 'wishTitle', 'updatedAt', 'heldAt'])
+            && d.wishId == i && d.ownerId == r && d.status == 'reserved'
+            && text(d.wishTitle, 300) && d.updatedAt is int
+            && ('heldAt' in d) && d.heldAt == request.time
+            && d.byMemberId == myMemberId(f)
+            && exists(ideaDocPath());
+        }
+        function ideaReserverUpdate() {
+          let n2 = request.resource.data;
+          let changed2 = n2.diff(resource.data).affectedKeys();
+          return changed2.hasOnly(['status', 'updatedAt', 'heldAt'])
+            && n2.status in ['reserved', 'purchased']
+            && (!changed2.hasAny(['heldAt'])
+                || (('heldAt' in n2) && n2.heldAt == request.time)
+                || (!('heldAt' in n2) && n2.status == 'purchased'))
+            && resource.data.byMemberId == myMemberId(f);
+        }
+        allow read: if ideaShopper();
+        allow create: if ideaShopper() && ideaValidNew(request.resource.data);
+        allow update: if ideaShopper()
+          && (ideaReserverUpdate() || (ideaRanOut(resource.data) && ideaValidNew(request.resource.data)));
+        allow delete: if ideaShopper() && resource.data.byMemberId == myMemberId(f);
+      }
+    }
+
+    // 0.9.1: rules probe. Nothing is ever stored here and nobody may write here, so a signed-in GET of
+    // /uttRulesProbe/organizer-admin-1 answers NOT_FOUND when THESE rules (or later ones that keep the
+    // organiser model) are live, and PERMISSION_DENIED when older rules are. The app reads it before it
+    // offers or attempts the organiser claim, so "the server's rules are out of date" is reported as
+    // exactly that instead of a vague refusal. It reveals nothing about any family.
+    match /uttRulesProbe/{capability} {
+      // 0.9.2 adds 'organizer-admin-2': present only when the 1000-expression fix above is live.
+      // 0.10.0 adds 'gift-ideas-1': present only when Gift Ideas and list managers above are live.
+      // 0.10.1 adds 'child-claim-1': present only when setup codes for children are live.
+      allow get: if signedIn() && capability in ['organizer-admin-1', 'organizer-admin-2', 'gift-ideas-1', 'child-claim-1'];
+      allow list, create, update, delete: if false;
+    }
+  }
+}
