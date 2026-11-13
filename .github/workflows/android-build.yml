@@ -1,0 +1,35 @@
+name: Android source build check
+
+on:
+  push:
+    paths:
+      - 'android/**'
+      - 'shared/index.html'
+      - 'build-android.sh'
+      - '.github/workflows/android-build.yml'
+  pull_request:
+    paths:
+      - 'android/**'
+      - 'shared/index.html'
+      - 'build-android.sh'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: android-actions/setup-android@v3
+      - name: Install SDK components
+        shell: bash
+        run: yes | sdkmanager 'platforms;android-23' 'build-tools;35.0.0' >/dev/null
+      - name: Build unsigned APK
+        shell: bash
+        run: ./build-android.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: UnderTheTree-0.10.1-unsigned
+          path: build/android/UnderTheTree-0.10.1-unsigned.apk
+          if-no-files-found: error

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="pine">#1F3B2D</color>
+    <color name="snow">#F3F6F4</color>
+    <style name="AppTheme" parent="@android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:statusBarColor">@color/pine</item>
+        <item name="android:navigationBarColor">@color/pine</item>
+        <item name="android:windowBackground">@color/snow</item>
+    </style>
+</resources>
