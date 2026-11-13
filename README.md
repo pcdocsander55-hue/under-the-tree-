@@ -51,6 +51,12 @@ There are **no ads, no behavioral tracking, and no selling your data**. The app 
 
 I also wanted the surprise part of Christmas to actually stay a surprise. Gift Ideas for you are hidden from you, even though the rest of the family can see and work with them.
 
+## Support Under the Tree
+
+Under the Tree is free and I intend to keep it that way. If your family finds it useful and you would like to help with hosting and future development, donations are appreciated but never required.
+
+**[Buy me a coffee](https://www.buymeacoffee.com/Sander55)**
+
 ## Source code
 
 The source is here because I wanted the app to stay available and give other people the chance to improve it.
