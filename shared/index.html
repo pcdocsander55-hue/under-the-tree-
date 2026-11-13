@@ -1967,6 +1967,8 @@ function renderSettings(){
     (fb ? renderMfDiag() : '') +
     '</section>';
   h += '<section class="panel"><h3>About</h3><p class="hint">Under the Tree ' + APP_VERSION + (Platform.isNative ? ' for Android' : (Platform.isWeb ? '<br>Web / PWA' + (window.UTT_WEB.standalone() ? ' (installed)' : ' (in the browser)') + ', build ' + esc(window.UTT_WEB.build) : ' web version')) + '.</p>' +
+    '<p class="hint">Under the Tree is free and I intend to keep it that way. If your family finds it useful and you would like to help with hosting and future development, donations are appreciated but never required.</p>' +
+    '<div class="actions"><button class="btn" data-act="open" data-url="https://www.buymeacoffee.com/Sander55">Buy me a coffee</button></div>' +
     (fb ? '<p class="hint">Leaving is under Family membership above.</p>'
         : '<button class="btn danger" data-act="leave">Delete demo data</button>') + '</section>';
   return h;
