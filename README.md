@@ -6,6 +6,14 @@ I wanted something simple: everybody can keep a wish list, people can claim gift
 
 It turned into a much better app than I expected, so I decided to share it. If another family finds it useful, that is really the whole point.
 
+## How it was built
+
+One thing I want to be upfront about: **Under the Tree is an AI-assisted app.**
+
+I came up with what I wanted the app to do, tested it, made the decisions, and kept pushing it in the direction I wanted. AI assistants did a lot of the coding and helped me work through problems along the way.
+
+I think that is worth saying because it is a big part of how this app came together. This project would not exist in its current form without AI-assisted development, and I am not interested in pretending otherwise.
+
 ## What it does
 
 - Create and share Christmas wish lists with your family.
