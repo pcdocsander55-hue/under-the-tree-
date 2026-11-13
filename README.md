@@ -33,4 +33,6 @@ Keep this repository **private** until the final source, branding, third-party l
 
 ## License
 
-No open-source license has been selected yet. Until one is added, no license is granted to copy, modify, or redistribute this source.
+This project is licensed under the **GNU General Public License v3.0 (GPL-3.0-only)**. You may use, study, modify, and redistribute the code under the terms of GPLv3. Distributed modified versions must remain under GPLv3 and include the corresponding source code.
+
+See [LICENSE](LICENSE) for the full license text.
