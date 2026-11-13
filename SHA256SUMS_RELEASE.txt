@@ -1,0 +1,2 @@
+41ead629ed5417eb2d82a2fc5fec187e547939bc880c59d3e2df711f5a2e746b  UnderTheTree-0.10.1.apk
+b4ccc272fae198e1fabb3a88b8102336285d41d68d5df1931bde5b71f7c4d640  signing-certificate-sha256

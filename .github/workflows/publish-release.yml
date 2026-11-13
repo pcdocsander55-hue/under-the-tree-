@@ -1,0 +1,35 @@
+name: Publish Android release
+
+on:
+  push:
+    paths:
+      - 'release-assets/UnderTheTree-0.10.1.apk'
+      - 'RELEASE_NOTES_0.10.1.md'
+      - '.github/workflows/publish-release.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify APK checksum
+        shell: bash
+        run: echo "41ead629ed5417eb2d82a2fc5fec187e547939bc880c59d3e2df711f5a2e746b  release-assets/UnderTheTree-0.10.1.apk" | sha256sum -c -
+      - name: Create or update GitHub release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if gh release view v0.10.1 >/dev/null 2>&1; then
+            gh release upload v0.10.1 release-assets/UnderTheTree-0.10.1.apk --clobber
+            gh release edit v0.10.1 --title "Under the Tree 0.10.1" --notes-file RELEASE_NOTES_0.10.1.md
+          else
+            gh release create v0.10.1 release-assets/UnderTheTree-0.10.1.apk \
+              --title "Under the Tree 0.10.1" \
+              --notes-file RELEASE_NOTES_0.10.1.md \
+              --target "$GITHUB_SHA"
+          fi
