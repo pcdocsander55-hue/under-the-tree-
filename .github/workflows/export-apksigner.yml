@@ -1,0 +1,33 @@
+name: Export Android apksigner tool
+
+on:
+  push:
+    paths:
+      - '.github/workflows/export-apksigner.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Locate apksigner
+        id: locate
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDK="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
+          JAR=$(find "$SDK/build-tools" -type f -path '*/lib/apksigner.jar' | sort -V | tail -1)
+          test -n "$JAR"
+          mkdir -p /tmp/apksigner-tool
+          cp "$JAR" /tmp/apksigner-tool/apksigner.jar
+          printf '%s\n' '#!/usr/bin/env bash' 'exec java -jar "$(dirname "$0")/apksigner.jar" "$@"' > /tmp/apksigner-tool/apksigner
+          chmod +x /tmp/apksigner-tool/apksigner
+          java -jar "$JAR" --version
+      - uses: actions/upload-artifact@v4
+        with:
+          name: apksigner-tool
+          path: /tmp/apksigner-tool/
+          if-no-files-found: error
+          retention-days: 1
