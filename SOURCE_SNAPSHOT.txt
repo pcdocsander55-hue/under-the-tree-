@@ -1,0 +1,8 @@
+Verified source snapshot imported from the owner's Google Drive.
+
+File: UnderTheTree-0.10.1-source-shared-android-web.zip
+SHA-256: d614d82b871f367c2b4b67cd940666286063f011f12a864198b12ea4f1efef57
+Size: 387763 bytes
+Version: 0.10.1 shared Android/Web/PWA source
+UPC/barcode scanner: not implemented
+Android wrapper source: not included in this snapshot

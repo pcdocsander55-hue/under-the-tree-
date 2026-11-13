@@ -1,0 +1,60 @@
+name: Import verified source archive
+
+on:
+  push:
+    paths:
+      - 'source-archive/UnderTheTree-0.10.1-source-shared-android-web.zip'
+
+permissions:
+  contents: write
+
+jobs:
+  import-source:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check whether the archive is present
+        id: archive
+        shell: bash
+        run: |
+          if [ -f "source-archive/UnderTheTree-0.10.1-source-shared-android-web.zip" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Verify archive checksum
+        if: steps.archive.outputs.present == 'true'
+        shell: bash
+        run: |
+          echo "d614d82b871f367c2b4b67cd940666286063f011f12a864198b12ea4f1efef57  source-archive/UnderTheTree-0.10.1-source-shared-android-web.zip" | sha256sum -c -
+
+      - name: Extract verified source
+        if: steps.archive.outputs.present == 'true'
+        shell: bash
+        run: |
+          rm -rf .source-import
+          mkdir -p .source-import
+          unzip -q "source-archive/UnderTheTree-0.10.1-source-shared-android-web.zip" -d .source-import
+          test -f .source-import/utt/shared/index.html
+          mkdir -p .source-import/utt/docs
+          mv .source-import/utt/README.md .source-import/utt/docs/SOURCE_PACKAGE_README_0.10.1.md
+          rm -rf .source-import/utt/web/dist
+          rm -f .source-import/utt/tests/*.log .source-import/utt/tests/results*.json
+          cp -a .source-import/utt/. .
+          rm -rf .source-import source-archive
+
+      - name: Commit imported source
+        if: steps.archive.outputs.present == 'true'
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No source changes to commit."
+          else
+            git commit -m "Import verified Under the Tree 0.10.1 source"
+            git push
+          fi
